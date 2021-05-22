@@ -21,6 +21,7 @@ module Api.Node exposing
     , typeGroup
     , typeModbus
     , typeModbusIO
+    , typeModbusMultiIO
     , typeMsgService
     , typeRule
     , typeUser
@@ -100,6 +101,11 @@ typeModbus =
 typeModbusIO : String
 typeModbusIO =
     "modbusIo"
+
+
+typeModbusMultiIO : String
+typeModbusMultiIO =
+    "modbusMultiIo"
 
 
 typeVariable : String

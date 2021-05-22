@@ -15,6 +15,7 @@ import Components.NodeGroup as NodeGroup
 import Components.NodeMessageService as NodeMessageService
 import Components.NodeModbus as NodeModbus
 import Components.NodeModbusIO as NodeModbusIO
+import Components.NodeModbusMultiIO as NodeModbusMultiIO
 import Components.NodeRule as NodeRule
 import Components.NodeUser as NodeUser
 import Components.NodeVariable as NodeVariable
@@ -1059,6 +1060,9 @@ viewNode model parent node depth =
                 "modbusIo" ->
                     NodeModbusIO.view
 
+                "modbusMultiIo" ->
+                    NodeModbusMultiIO.view
+
                 "rule" ->
                     NodeRule.view
 
@@ -1266,6 +1270,11 @@ nodeDescModbusIO =
     row [] [ Icon.io, text "Modbus IO" ]
 
 
+nodeDescModbusMultiIO : Element Msg
+nodeDescModbusMultiIO =
+    row [] [ Icon.io, text "Modbus Multiple IO" ]
+
+
 nodeDescRule : Element Msg
 nodeDescRule =
     row [] [ Icon.list, text "Rule" ]
@@ -1332,7 +1341,9 @@ viewAddNode parent add =
                             []
                        )
                     ++ (if parent.node.typ == Node.typeModbus then
-                            [ Input.option Node.typeModbusIO nodeDescModbusIO ]
+                            [ Input.option Node.typeModbusIO nodeDescModbusIO
+                            , Input.option Node.typeModbusMultiIO nodeDescModbusMultiIO
+                            ]
 
                         else
                             []

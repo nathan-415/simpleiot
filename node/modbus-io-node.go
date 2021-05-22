@@ -2,6 +2,7 @@ package node
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/simpleiot/simpleiot/data"
 )
@@ -29,6 +30,7 @@ type ModbusIONode struct {
 
 // NewModbusIONode Convert node to modbus IO node
 func NewModbusIONode(busType string, node *data.NodeEdge) (*ModbusIONode, error) {
+	fmt.Println("COLLIN, added node")
 	ret := ModbusIONode{
 		nodeID: node.ID,
 	}

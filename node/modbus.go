@@ -124,6 +124,7 @@ func (b *Modbus) CheckIOs() error {
 			// add ios
 			var err error
 			ioNode, err := NewModbusIONode(b.busNode.busType, &node)
+			fmt.Println("COLLIN, added it here")
 			if err != nil {
 				log.Println("Error with IO node: ", err)
 				continue

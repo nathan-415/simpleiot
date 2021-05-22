@@ -73,7 +73,8 @@ const (
 	PointValueRTU     = "RTU"
 	PointValueTCP     = "TCP"
 
-	NodeTypeModbusIO = "modbusIo"
+	NodeTypeModbusIO      = "modbusIo"
+	NodeTypeModbusMultiIO = "modbusMultiIo"
 
 	PointTypeModbusIOType           = "modbusIoType"
 	PointValueModbusDiscreteInput   = "modbusDiscreteInput"
