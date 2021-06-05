@@ -121,21 +121,43 @@ func (b *Modbus) CheckIOs() error {
 		found[node.ID] = true
 		io, ok := b.ios[node.ID]
 		if !ok {
-			// add ios
-			var err error
-			ioNode, err := NewModbusIONode(b.busNode.busType, &node)
-			fmt.Println("COLLIN, added it here")
-			if err != nil {
-				log.Println("Error with IO node: ", err)
-				continue
+			switch node.Type {
+			case data.NodeTypeModbusIO:
+				// add ios
+				var err error
+				ioNode, err := NewModbusIONode(b.busNode.busType, &node)
+				fmt.Println("COLLIN, added it here")
+				if err != nil {
+					log.Println("Error with IO node: ", err)
+					continue
+				}
+				io, err = NewModbusIO(b.nc, ioNode, b.chPoint)
+				if err != nil {
+					log.Println("Error creating new modbus IO: ", err)
+					continue
+				}
+				b.ios[node.ID] = io
+				b.InitRegs(io.ioNode)
+			case data.NodeTypeModbusMultiIO:
+				// add ios
+				var err error
+				ioNode, err := NewModbusMultiIONode(b.busNode.busType, &node)
+				_ = ioNode
+				fmt.Println("COLLIN, added multi here")
+				if err != nil {
+					log.Println("Error with IO node: ", err)
+					continue
+				}
+				/*
+						io, err = NewModbusMultiIO(b.nc, ioNode, b.chPoint)
+						if err != nil {
+							log.Println("Error creating new modbus IO: ", err)
+							continue
+						}
+					b.ios[node.ID] = io
+						b.InitRegs(io.ioNode)
+				*/
 			}
-			io, err = NewModbusIO(b.nc, ioNode, b.chPoint)
-			if err != nil {
-				log.Println("Error creating new modbus IO: ", err)
-				continue
-			}
-			b.ios[node.ID] = io
-			b.InitRegs(io.ioNode)
 		}
 	}
 

@@ -1018,6 +1018,9 @@ shouldDisplay typ =
         "modbusIo" ->
             True
 
+        "modbusMultiIo" ->
+            True
+
         "rule" ->
             True
 
