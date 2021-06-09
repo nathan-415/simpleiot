@@ -74,14 +74,8 @@ view o =
             :: (if o.expDetail then
                     [ textInput Point.typeDescription "Description"
                     , numberInput Point.typeID "ID"
-                    , wrappedRow [ spacing 10 ]
-                        [ onOffInput Point.typeValue Point.typeValueSet "DI_01"
-                        , textInput Point.typeDescription ""
-                        ]
-                    , wrappedRow [ spacing 20 ]
-                        [ onOffInput Point.typeValue Point.typeValueSet "DI_02"
-                        , textInput Point.typeDescription ""
-                        ]
+                    , onOffInput Point.typeValue Point.typeValueSet "DI_01"
+                    , onOffInput Point.typeValue Point.typeValueSet "DI_02"
                     ]
 
                 else
