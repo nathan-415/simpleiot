@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/simpleiot/simpleiot/data"
@@ -33,7 +32,7 @@ func String(nc *natsgo.Conn, msg *natsgo.Msg) (string, error) {
 	nodeID := chunks[1]
 
 	if len(chunks) < 3 {
-		return "", errors.New("don't know how to decode this msg")
+		return "", fmt.Errorf("don't know how to decode this subject: %v", msg.Subject)
 	}
 
 	if chunks[0] != "node" {
@@ -41,16 +40,10 @@ func String(nc *natsgo.Conn, msg *natsgo.Msg) (string, error) {
 	}
 
 	// Fetch node so we can print description
-	nodeMsg, err := nc.Request("node."+nodeID, nil, time.Second)
+	node, err := GetNode(nc, nodeID, "")
 
 	if err != nil {
-		return "", fmt.Errorf("Error getting node over NATS: %w", err)
-	}
-
-	node, err := data.PbDecodeNode(nodeMsg.Data)
-
-	if err != nil {
-		return "", fmt.Errorf("Error decoding node data from server: %w", err)
+		return "", fmt.Errorf("Error getting node over nats: %w", err)
 	}
 
 	description := node.Desc()
@@ -65,11 +58,7 @@ func String(nc *natsgo.Conn, msg *natsgo.Msg) (string, error) {
 		}
 
 		for _, p := range points {
-			if p.Text != "" {
-				ret += fmt.Sprintf("   - POINT: %v: %v\n", p.Type, p.Text)
-			} else {
-				ret += fmt.Sprintf("   - POINT: %v: %v\n", p.Type, p.Value)
-			}
+			ret += fmt.Sprintf("   - POINT: %v\n", p)
 		}
 
 	case "not":

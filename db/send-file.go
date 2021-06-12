@@ -1,4 +1,6 @@
-package api
+package db
+
+// FIXME could probably find a better place for this file ...
 
 import (
 	"errors"
@@ -6,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	n "github.com/nats-io/nats.go"
+	natsgo "github.com/nats-io/nats.go"
 	"github.com/simpleiot/simpleiot/nats"
 )
 
@@ -16,7 +18,7 @@ import (
 // Companion file in nats/file.go
 
 // NatsSendFileFromHTTP fetchs a file using http and sends via nats. Callback provides % complete (0-100).
-func NatsSendFileFromHTTP(nc *n.Conn, deviceID string, url string, callback func(int)) error {
+func NatsSendFileFromHTTP(nc *natsgo.Conn, deviceID string, url string, callback func(int)) error {
 	var netClient = &http.Client{
 		Timeout: time.Second * 60,
 	}

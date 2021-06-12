@@ -2,30 +2,75 @@ package node
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"text/template"
 	"time"
 
+	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
 
 	"github.com/simpleiot/simpleiot/data"
-	"github.com/simpleiot/simpleiot/db/genji"
+	"github.com/simpleiot/simpleiot/db"
+	"github.com/simpleiot/simpleiot/nats"
 )
 
 // Manager is responsible for maintaining node state, running rules, etc
 type Manager struct {
-	db            *genji.Db
-	modbusManager *ModbusManager
-	nc            *natsgo.Conn
+	db              *db.Db
+	nc              *natsgo.Conn
+	modbusManager   *ModbusManager
+	upstreamManager *UpstreamManager
 }
 
 // NewManger creates a new Manager
-func NewManger(db *genji.Db, nc *natsgo.Conn) *Manager {
+func NewManger(db *db.Db, nc *natsgo.Conn) *Manager {
 	return &Manager{
-		db:            db,
-		modbusManager: NewModbusManager(db, nc),
-		nc:            nc,
+		db:              db,
+		nc:              nc,
+		modbusManager:   NewModbusManager(db, nc),
+		upstreamManager: NewUpstreamManager(db, nc),
 	}
+}
+
+// Init initializes the tree root node and default admin if needed
+func (m *Manager) Init() error {
+	rootID := m.db.RootNodeID()
+	if rootID == "" {
+		// initialize root node and user
+		p := data.Point{
+			Time: time.Now(),
+			Type: data.PointTypeNodeType,
+			Text: data.NodeTypeDevice,
+		}
+
+		id := uuid.New().String()
+
+		err := nats.SendPoint(m.nc, id, p, false)
+		if err != nil {
+			return fmt.Errorf("Error setting root node: %v", err)
+		}
+
+		// create admin user off root node
+		admin := data.User{
+			ID:        uuid.New().String(),
+			FirstName: "admin",
+			LastName:  "user",
+			Email:     "admin@admin.com",
+			Pass:      "admin",
+		}
+
+		points := admin.ToPoints()
+		points = append(points, data.Point{Type: data.PointTypeNodeType,
+			Text: data.NodeTypeUser})
+
+		err = nats.SendPoint(m.nc, id, p, false)
+		if err != nil {
+			return fmt.Errorf("Error setting default user: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // Run manager
@@ -35,6 +80,7 @@ func (m *Manager) Run() {
 		// on the creation of new nodes
 		for {
 			m.modbusManager.Update()
+			m.upstreamManager.Update()
 			time.Sleep(10 * time.Second)
 		}
 	}()
@@ -50,10 +96,15 @@ func (m *Manager) Run() {
 
 		for _, node := range nodes {
 			// update node state
-			state, changed := node.UpdateState()
+			state, changed := node.GetState()
 			if changed {
-				// FIXME this needs modified to go through NATS
-				err := m.db.NodeSetState(node.ID, state)
+				p := data.Point{
+					Time: time.Now(),
+					Type: data.PointTypeSysState,
+					Text: state,
+				}
+
+				err := nats.SendPoint(m.nc, node.ID, p, false)
 				if err != nil {
 					log.Println("Error updating node state: ", err)
 				}

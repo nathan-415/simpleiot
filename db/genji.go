@@ -1,14 +1,17 @@
-package genji
+package db
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"path"
-	"strings"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
@@ -18,7 +21,6 @@ import (
 	"github.com/genjidb/genji/engine/badgerengine"
 	"github.com/google/uuid"
 	"github.com/simpleiot/simpleiot/data"
-	bolt "go.etcd.io/bbolt"
 )
 
 // StoreType defines the backing store used for the DB
@@ -33,8 +35,8 @@ const (
 
 // Meta contains metadata about the database
 type Meta struct {
-	Version int
-	RootID  string
+	Version int    `json:"version"`
+	RootID  string `json:"rootID"`
 }
 
 // This file contains database manipulations.
@@ -45,6 +47,7 @@ type Meta struct {
 type Db struct {
 	store *genji.DB
 	meta  Meta
+	lock  sync.RWMutex
 }
 
 // NewDb creates a new Db instance for the app
@@ -102,6 +105,8 @@ func NewDb(storeType StoreType, dataDir string) (*Db, error) {
 		return nil, fmt.Errorf("Error creating edges table: %w", err)
 	}
 
+	/* Disable index for now as it is getting scrambled
+
 	err = store.Exec(`CREATE INDEX IF NOT EXISTS idx_edge_up ON edges(up)`)
 	if err != nil {
 		return nil, fmt.Errorf("Error creating idx_edge_up: %w", err)
@@ -111,10 +116,14 @@ func NewDb(storeType StoreType, dataDir string) (*Db, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error creating idx_edge_down: %w", err)
 	}
+	*/
 
 	db := &Db{store: store}
 	return db, db.initialize()
 }
+
+// DBVersion for this version of siot
+var DBVersion = 1
 
 // initialize initializes the database with one user (admin)
 func (gen *Db) initialize() error {
@@ -137,48 +146,12 @@ func (gen *Db) initialize() error {
 
 	// need to initialize db
 	err = gen.store.Update(func(tx *genji.Tx) error {
-		log.Println("adding initial node structure and admin user ...")
-
-		rootNode := data.Node{Type: data.NodeTypeDevice, ID: uuid.New().String()}
-
-		err = tx.Exec(`insert into nodes values ?`, rootNode)
-		if err != nil {
-			return fmt.Errorf("Error creating root node: %w", err)
-		}
-
 		// populate metadata with root node ID
-		gen.meta = Meta{RootID: rootNode.ID}
+		gen.meta = Meta{Version: DBVersion}
 
 		err = tx.Exec(`insert into meta values ?`, gen.meta)
 		if err != nil {
 			return fmt.Errorf("Error inserting meta: %w", err)
-		}
-
-		// create admin user off root node
-		admin := data.User{
-			ID:        uuid.New().String(),
-			FirstName: "admin",
-			LastName:  "user",
-			Email:     "admin@admin.com",
-			Pass:      "admin",
-		}
-
-		adminUserNode := data.Node{
-			Type:   data.NodeTypeUser,
-			ID:     admin.ID,
-			Points: admin.ToPoints()}
-
-		err = tx.Exec(`insert into nodes values ?`, adminUserNode)
-		if err != nil {
-			return fmt.Errorf("Error inserting admin user: %w", err)
-		}
-
-		log.Println("Created admin user: ", admin)
-
-		// create relationship between root and user node
-		err = txEdgeInsert(tx, &data.Edge{Up: rootNode.ID, Down: adminUserNode.ID})
-		if err != nil {
-			return fmt.Errorf("Error creating root/admin edge: %w", err)
 		}
 
 		return nil
@@ -194,6 +167,8 @@ func (gen *Db) Close() error {
 
 // RootNodeID returns the ID of the root node
 func (gen *Db) RootNodeID() string {
+	gen.lock.RLock()
+	defer gen.lock.RUnlock()
 	return gen.meta.RootID
 }
 
@@ -208,17 +183,21 @@ func txNode(tx *genji.Tx, id string) (data.Node, error) {
 	return node, err
 }
 
-// recurisively find all descendents
-func txNodeFindDescendents(tx *genji.Tx, id string, recursive bool) ([]data.NodeEdge, error) {
+// recurisively find all descendents -- level is used to limit recursion
+func txNodeFindDescendents(tx *genji.Tx, id string, recursive bool, level int) ([]data.NodeEdge, error) {
 	var nodes []data.NodeEdge
 
-	downIDs, err := txEdgeDown(tx, id)
+	if level > 100 {
+		return nodes, errors.New("Error: txNodeFindDescendents, recursion limit reached")
+	}
+
+	downNodes, err := txEdgeDown(tx, id)
 	if err != nil {
 		return nodes, err
 	}
 
-	for _, downID := range downIDs {
-		node, err := txNode(tx, downID)
+	for _, downNode := range downNodes {
+		node, err := txNode(tx, downNode.id)
 		if err != nil {
 			if err != database.ErrDocumentNotFound {
 				// something bad happened
@@ -226,14 +205,14 @@ func txNodeFindDescendents(tx *genji.Tx, id string, recursive bool) ([]data.Node
 			}
 			// else something is minorly wrong with db, print
 			// error and return
-			log.Println("Error finding node: ", downID)
+			log.Println("Error finding node: ", downNode.id)
 			continue
 		}
 
-		nodes = append(nodes, node.ToNodeEdge(id))
+		nodes = append(nodes, node.ToNodeEdge(id, downNode.tombstone))
 
-		if recursive {
-			downNodes, err := txNodeFindDescendents(tx, downID, true)
+		if recursive && !downNode.tombstone {
+			downNodes, err := txNodeFindDescendents(tx, downNode.id, true, level+1)
 			if err != nil {
 				return nodes, err
 			}
@@ -254,6 +233,43 @@ func (gen *Db) Node(id string) (data.Node, error) {
 		return err
 	})
 	return node, err
+}
+
+// nodeEdge returns a node edge
+func (gen *Db) nodeEdge(id, parent string) (data.NodeEdge, error) {
+	var nodeEdge data.NodeEdge
+	err := gen.store.View(func(tx *genji.Tx) error {
+		node, err := txNode(tx, id)
+
+		if err != nil {
+			return err
+		}
+
+		if parent != "" {
+			doc, err := tx.QueryDocument(`select * from edges where up = ? and down = ?`,
+				parent, id)
+
+			if err != nil {
+				return err
+			}
+
+			var edge data.Edge
+
+			err = document.StructScan(doc, &edge)
+
+			if err != nil {
+				return err
+			}
+
+			nodeEdge = node.ToNodeEdge(parent, edge.Tombstone)
+		} else {
+			nodeEdge = node.ToNodeEdge("", false)
+		}
+
+		return nil
+	})
+
+	return nodeEdge, err
 }
 
 func (gen *Db) txNodes(tx *genji.Tx) ([]data.Node, error) {
@@ -293,35 +309,13 @@ func (gen *Db) Nodes() ([]data.Node, error) {
 	return nodes, err
 }
 
-// NodeInsert is used to insert a node into the database
-func (gen *Db) NodeInsert(node data.Node) (string, error) {
+// nodeInsert is used to insert a node into the database
+func (gen *Db) nodeInsert(node data.Node) (string, error) {
 	if node.ID == "" {
 		node.ID = uuid.New().String()
 	}
 
 	return node.ID, gen.store.Exec(`insert into nodes values ?`, node)
-}
-
-// NodeInsertEdge -- insert a node and edge and return uuid
-// FIXME can we replace this with NATS calls?
-func (gen *Db) NodeInsertEdge(node data.NodeEdge) (string, error) {
-	if node.ID == "" {
-		node.ID = uuid.New().String()
-	}
-
-	if node.Type == "" {
-		return "", errors.New("New nodes must have a type")
-	}
-
-	err := gen.store.Update(func(tx *genji.Tx) error {
-		err := tx.Exec(`insert into nodes values ?`, node.ToNode())
-		if err != nil {
-			return err
-		}
-		return txEdgeInsert(tx, &data.Edge{Up: node.Parent, Down: node.ID})
-	})
-
-	return node.ID, err
 }
 
 func txNodeDelete(tx *genji.Tx, id, parent string) error {
@@ -330,10 +324,14 @@ func txNodeDelete(tx *genji.Tx, id, parent string) error {
 		return err
 	}
 
-	err = tx.Exec(`delete from edges where down = ? and up = ?`, id, parent)
+	err = tx.Exec(`update edges set tombstone = true where down = ? and up = ?`, id, parent)
 	if err != nil {
 		return err
 	}
+
+	_ = upIDs
+
+	/* for now we just leave all delete nodes in db -- we may change this later
 
 	if len(upIDs) > 1 {
 		// there are still other nodes using this node
@@ -355,16 +353,9 @@ func txNodeDelete(tx *genji.Tx, id, parent string) error {
 	if err != nil {
 		return err
 	}
+	*/
 
 	return nil
-}
-
-// NodeDelete deletes a node from the database and recursively all
-// descendents
-func (gen *Db) NodeDelete(id, parent string) error {
-	return gen.store.Update(func(tx *genji.Tx) error {
-		return txNodeDelete(tx, id, parent)
-	})
 }
 
 var uuidZero uuid.UUID
@@ -374,20 +365,63 @@ func init() {
 	zero = uuidZero.String()
 }
 
-// NodePoint processes a Point for a particular node
-func (gen *Db) NodePoint(id string, point data.Point) error {
+func (gen *Db) nodeUpdateHash(id string) error {
+	return gen.store.Update(func(tx *genji.Tx) error {
+		node, err := txNode(tx, id)
+
+		if err != nil {
+			return err
+		}
+
+		h := md5.New()
+
+		for _, p := range node.Points {
+			d := make([]byte, 8)
+			binary.LittleEndian.PutUint64(d, uint64(p.Time.UnixNano()))
+			h.Write(d)
+		}
+
+		// get child nodes
+		childNodes, err := txNodeFindDescendents(tx, node.ID, false, 0)
+
+		if err != nil {
+			return err
+		}
+
+		sort.Sort(data.ByHash(childNodes))
+
+		for _, n := range childNodes {
+			h.Write(n.Hash)
+
+			if n.Tombstone {
+				h.Write([]byte{1})
+			} else {
+				h.Write([]byte{0})
+			}
+		}
+
+		return tx.Exec(`update nodes set hash = ? where id = ?`,
+			h.Sum(nil), node.ID)
+	})
+}
+
+// nodePoints processes a Point for a particular node
+func (gen *Db) nodePoints(id string, points data.Points) error {
 	// for now, we process one point at a time. We may eventually
 	// want to create NodePoints to process multiple points so
 	// we can batch influx writes for performance
 
-	if point.Time.IsZero() {
-		point.Time = time.Now()
+	for _, p := range points {
+		if p.Time.IsZero() {
+			p.Time = time.Now()
+		}
 	}
 
 	return gen.store.Update(func(tx *genji.Tx) error {
 		var node data.Node
-		doc, err := tx.QueryDocument(`select * from nodes where id = ?`, id)
 		found := false
+
+		doc, err := tx.QueryDocument(`select * from nodes where id = ?`, id)
 
 		if err != nil {
 			if err == database.ErrDocumentNotFound {
@@ -404,8 +438,43 @@ func (gen *Db) NodePoint(id string, point data.Point) error {
 			found = true
 		}
 
-		node.ProcessPoint(point)
-		node.SetState(data.PointValueSysStateOnline)
+		addParent := ""
+		removeParent := ""
+
+		for _, point := range points {
+			if point.Type == data.PointTypeNodeType {
+				node.Type = point.Text
+				// we don't encode type in points as this has its own field
+				continue
+			}
+
+			if point.Type == data.PointTypeAddParent {
+				addParent = point.Text
+				// we don't encode parent in points as this has its own field
+				continue
+			}
+
+			if point.Type == data.PointTypeRemoveParent {
+				removeParent = point.Text
+				// we don't encode parent in points as this has its own field
+				continue
+			}
+
+			node.Points.ProcessPoint(point)
+		}
+
+		state := node.State()
+		if state != data.PointValueSysStateOnline {
+			node.Points.ProcessPoint(
+				data.Point{
+					Time: time.Now(),
+					Type: data.PointTypeSysState,
+					Text: data.PointValueSysStateOnline,
+				},
+			)
+		}
+
+		sort.Sort(node.Points)
 
 		if !found {
 			err := tx.Exec(`insert into nodes values ?`, node)
@@ -414,54 +483,54 @@ func (gen *Db) NodePoint(id string, point data.Point) error {
 				return err
 			}
 
-			return txEdgeInsert(tx, &data.Edge{
-				Up: gen.meta.RootID, Down: id})
+			if gen.meta.RootID == "" {
+				log.Println("setting meta root id: ", node.ID)
+				err := tx.Exec(`update meta set rootid = ?`, node.ID)
+				if err != nil {
+					return err
+				}
+				gen.lock.Lock()
+				gen.meta.RootID = node.ID
+				gen.lock.Unlock()
+			} else {
+				if addParent == "" {
+					addParent = gen.meta.RootID
+				}
+
+				err := txEdgeInsert(tx, &data.Edge{
+					Up: addParent, Down: id})
+
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			err := tx.Exec(`update nodes set points = ?, type = ? where id = ?`,
+				node.Points, node.Type, id)
+
+			if err != nil {
+				return err
+			}
+
+			if addParent != "" {
+				// make sure edge node to parent exists
+				err := txEdgeInsert(tx, &data.Edge{
+					Up: addParent, Down: id})
+
+				if err != nil {
+					return err
+				}
+			}
 		}
 
-		return tx.Exec(`update nodes set points = ? where id = ?`,
-			node.Points, id)
-	})
-}
-
-// NodeSetState is used to set the current system state
-func (gen *Db) NodeSetState(id string, state string) error {
-	return gen.store.Update(func(tx *genji.Tx) error {
-		var node data.Node
-		doc, err := tx.QueryDocument(`select * from nodes where id = ?`, id)
-		if err != nil {
-			return err
+		if removeParent != "" {
+			err := txNodeDelete(tx, id, removeParent)
+			if err != nil {
+				return err
+			}
 		}
 
-		err = document.StructScan(doc, &node)
-		if err != nil {
-			return err
-		}
-
-		node.SetState(state)
-
-		return tx.Exec(`update nodes set points = ? where id = ?`,
-			node.Points, id)
-	})
-}
-
-// NodeSetSwUpdateState is used to set the SW update state of the node
-func (gen *Db) NodeSetSwUpdateState(id string, state data.SwUpdateState) error {
-	return gen.store.Update(func(tx *genji.Tx) error {
-		var node data.Node
-		doc, err := tx.QueryDocument(`select * from nodes where id = ?`, id)
-		if err != nil {
-			return err
-		}
-
-		err = document.StructScan(doc, &node)
-		if err != nil {
-			return err
-		}
-
-		node.SetSwUpdateState(state)
-
-		return tx.Exec(`update nodes set points = ? where id = ?`,
-			node.Points, id)
+		return nil
 	})
 }
 
@@ -486,9 +555,9 @@ func (gen *Db) NodesForUser(userID string) ([]data.NodeEdge, error) {
 			if err != nil {
 				return err
 			}
-			nodes = append(nodes, rootNode.ToNodeEdge(""))
+			nodes = append(nodes, rootNode.ToNodeEdge("", false))
 
-			childNodes, err := txNodeFindDescendents(tx, id, true)
+			childNodes, err := txNodeFindDescendents(tx, id, true, 0)
 			if err != nil {
 				return err
 			}
@@ -505,11 +574,13 @@ func (gen *Db) NodesForUser(userID string) ([]data.NodeEdge, error) {
 // NodeDescendents returns all descendents for a particular node ID and type
 // set typ to blank string to find all descendents. Set recursive to false to
 // stop at children, true to recursively get all descendents.
+// FIXME, once recursion has been moved to client, this can return only a single
+// level of []data.Node.
 func (gen *Db) NodeDescendents(id, typ string, recursive bool) ([]data.NodeEdge, error) {
 	var nodes []data.NodeEdge
 
 	err := gen.store.View(func(tx *genji.Tx) error {
-		childNodes, err := txNodeFindDescendents(tx, id, recursive)
+		childNodes, err := txNodeFindDescendents(tx, id, recursive, 0)
 		if err != nil {
 			return err
 		}
@@ -535,15 +606,29 @@ func (gen *Db) NodeDescendents(id, typ string, recursive bool) ([]data.NodeEdge,
 }
 
 func txEdgeInsert(tx *genji.Tx, edge *data.Edge) error {
-	if edge.ID == "" {
-		edge.ID = uuid.New().String()
+	_, err := tx.QueryDocument(`select * from edges where up = ? and down = ?`,
+		edge.Up, edge.Down)
+
+	if err != nil {
+		if err == database.ErrDocumentNotFound {
+			// create the edge entry
+			if edge.ID == "" {
+				edge.ID = uuid.New().String()
+			}
+
+			return tx.Exec(`insert into edges values ?`, edge)
+		}
+
+		return err
 	}
 
-	return tx.Exec(`insert into edges values ?`, edge)
+	// edge already exists, make sure tombstone field is false
+	return tx.Exec(`update edges set tombstone = false where up = ? and down = ?`,
+		edge.Up, edge.Down)
 }
 
-// EdgeInsert is used to insert an edge into the database
-func (gen *Db) EdgeInsert(edge data.Edge) (string, error) {
+// edgeInsert is used to insert an edge into the database
+func (gen *Db) edgeInsert(edge data.Edge) (string, error) {
 	err := gen.store.Update(func(tx *genji.Tx) error {
 		return txEdgeInsert(tx, &edge)
 	})
@@ -551,8 +636,8 @@ func (gen *Db) EdgeInsert(edge data.Edge) (string, error) {
 	return edge.ID, err
 }
 
-// Edges returns all edges.
-func (gen *Db) Edges() ([]data.Edge, error) {
+// edges returns all edges.
+func (gen *Db) edges() ([]data.Edge, error) {
 	var edges []data.Edge
 
 	err := gen.store.View(func(tx *genji.Tx) error {
@@ -580,10 +665,10 @@ func (gen *Db) Edges() ([]data.Edge, error) {
 	return edges, err
 }
 
-// find upstream nodes
+// find upstream nodes. Does not include tombstoned edges.
 func txEdgeUp(tx *genji.Tx, nodeID string) ([]string, error) {
 	var ret []string
-	res, err := tx.Query(`select * from edges where down = ?`, nodeID)
+	res, err := tx.Query(`select * from edges where down = ? and tombstone = false`, nodeID)
 	if err != nil {
 		return ret, err
 	}
@@ -603,9 +688,14 @@ func txEdgeUp(tx *genji.Tx, nodeID string) ([]string, error) {
 	return ret, err
 }
 
+type downNode struct {
+	id        string
+	tombstone bool
+}
+
 // find downstream nodes
-func txEdgeDown(tx *genji.Tx, nodeID string) ([]string, error) {
-	var ret []string
+func txEdgeDown(tx *genji.Tx, nodeID string) ([]downNode, error) {
+	var ret []downNode
 	res, err := tx.Query(`select * from edges where up = ?`, nodeID)
 	if err != nil {
 		if err != database.ErrDocumentNotFound {
@@ -624,14 +714,15 @@ func txEdgeDown(tx *genji.Tx, nodeID string) ([]string, error) {
 			return err
 		}
 
-		ret = append(ret, edge.Down)
+		ret = append(ret, downNode{edge.Down, edge.Tombstone})
 		return nil
 	})
 
 	return ret, err
 }
 
-// EdgeUp returns an array of upstream nodes for a node
+// EdgeUp returns an array of upstream nodes for a node. Does not include
+// tombstoned edges.
 func (gen *Db) EdgeUp(nodeID string) ([]string, error) {
 	var ret []string
 
@@ -644,75 +735,68 @@ func (gen *Db) EdgeUp(nodeID string) ([]string, error) {
 	return ret, err
 }
 
-// EdgeMove is used to change a nodes parent
-func (gen *Db) EdgeMove(id, oldParent, newParent string) error {
-	return gen.store.Update(func(tx *genji.Tx) error {
-		err := tx.Exec(`delete from edges where up = ? and down = ?`,
-			oldParent, id)
+type privilege string
 
-		if err != nil {
-			if err != database.ErrDocumentNotFound {
-				return err
+// minDistToRoot is used to calculate the minimum distance to the root node
+func (gen *Db) minDistToRoot(id string) (int, error) {
+	ret := 0
+	err := gen.store.View(func(tx *genji.Tx) error {
+		var countUp func(string, int) (int, error)
+
+		// recursive function to find the shortest distance to root node
+		countUp = func(id string, count int) (int, error) {
+			if gen.RootNodeID() == id {
+				return count, nil
 			}
 
-			log.Println("Could not find old parent node: ", oldParent)
+			cnt := 10000000
+			ups, err := txEdgeUp(tx, id)
+			if err != nil {
+				return count, err
+			}
+
+			for _, up := range ups {
+				c, err := countUp(up, count+1)
+				if err != nil {
+					return count, err
+				}
+				if c < cnt {
+					cnt = c
+				}
+			}
+
+			return cnt, nil
 		}
 
-		return txEdgeInsert(tx, &data.Edge{Up: newParent, Down: id})
-	})
-}
-
-// EdgeCopy is used to copy a node
-func (gen *Db) EdgeCopy(id, newParent string) error {
-	return gen.store.Update(func(tx *genji.Tx) error {
-		return txEdgeInsert(tx, &data.Edge{Up: newParent, Down: id})
-	})
-}
-
-type users []data.User
-
-func (u users) Len() int {
-	return len(u)
-}
-
-func (u users) Less(i, j int) bool {
-	return strings.ToLower((u)[i].FirstName) < strings.ToLower((u)[j].FirstName)
-}
-
-func (u users) Swap(i, j int) {
-	u[i], u[j] = u[j], u[i]
-}
-
-// Users returns all users, sorted by first name.
-func (gen *Db) Users() ([]data.User, error) {
-	var users []data.User
-	res, err := gen.store.Query(`select * from users order by firstName`)
-	if err != nil {
-		return users, err
-	}
-
-	defer res.Close()
-
-	err = res.Iterate(func(d document.Document) error {
-		var user data.User
-		err = document.StructScan(d, &user)
+		var err error
+		ret, err = countUp(id, 0)
 		if err != nil {
 			return err
 		}
 
-		users = append(users, user)
 		return nil
 	})
 
-	return users, err
+	return ret, err
 }
 
-type privilege string
+type userDistRoot struct {
+	distRoot int
+	user     data.User
+}
+
+// we want to use the one closest to the root node for authentication
+type byDistRoot []userDistRoot
+
+// implement sort interface
+func (b byDistRoot) Len() int           { return len(b) }
+func (b byDistRoot) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b byDistRoot) Less(i, j int) bool { return b[i].distRoot < b[j].distRoot }
 
 // UserCheck checks user authentication
 // returns nil, nil if user is not found
 func (gen *Db) UserCheck(email, password string) (*data.User, error) {
-	var user data.User
+	var users []userDistRoot
 
 	res, err := gen.store.Query(`select * from nodes where type = ?`, data.NodeTypeUser)
 	if err != nil {
@@ -735,20 +819,27 @@ func (gen *Db) UserCheck(email, password string) (*data.User, error) {
 		u := node.ToUser()
 
 		if u.Email == email && u.Pass == password {
-			user = u
+			distRoot, err := gen.minDistToRoot(u.ID)
+			if err != nil {
+				log.Println("Error getting dist to root: ", err)
+			}
+			users = append(users, userDistRoot{distRoot, u})
 		}
 
 		return nil
 	})
 
-	if user.ID != "" {
-		return &user, err
+	if len(users) > 0 {
+		sort.Sort(byDistRoot(users))
+		return &users[0].user, err
 	}
 
 	return nil, err
 }
 
 // UserIsRoot checks if root user
+// TODO: our current UI does not use the root user concept
+// but we probably should implement something like that at some point
 func (gen *Db) UserIsRoot(id string) (bool, error) {
 	upstreamNodes, err := gen.EdgeUp(id)
 	if err != nil {
@@ -764,215 +855,9 @@ func (gen *Db) UserIsRoot(id string) (bool, error) {
 	return false, nil
 }
 
-// UserByID returns the user with the given ID, if it exists.
-func (gen *Db) UserByID(id string) (data.User, error) {
-	var user data.User
-
-	doc, err := gen.store.QueryDocument(`select * from users where id = ?`,
-		id)
-
-	if err != nil {
-		return user, err
-	}
-
-	err = document.StructScan(doc, &user)
-	return user, err
-}
-
-// UserByEmail returns the user with the given email, if it exists.
-func (gen *Db) UserByEmail(email string) (data.User, error) {
-	var user data.User
-
-	doc, err := gen.store.QueryDocument(`select * from users where email = ?`,
-		email)
-
-	if err != nil {
-		return user, err
-	}
-
-	err = document.StructScan(doc, &user)
-	return user, err
-}
-
-// UsersForGroup returns all users who who are connected to a node by a group.
-func (gen *Db) UsersForGroup(id string) ([]data.User, error) {
-	var users []data.User
-
-	err := gen.store.View(func(tx *genji.Tx) error {
-		doc, err := tx.QueryDocument(`select * from groups where id = ?`, id)
-		if err != nil {
-			return err
-		}
-
-		var group data.Group
-		err = document.StructScan(doc, &group)
-		if err != nil {
-			return err
-		}
-
-		for _, role := range group.Users {
-			doc, err = tx.QueryDocument(`select * from users where id = ?`, role.UserID)
-			if err != nil {
-				return err
-			}
-
-			var user data.User
-			err = document.StructScan(doc, &user)
-			if err != nil {
-				return err
-			}
-			users = append(users, user)
-		}
-		return nil
-	})
-
-	return users, err
-}
-
-// NodesForGroup returns the nodes which are property of the given Group.
-func (gen *Db) NodesForGroup(tx *bolt.Tx, groupID string) ([]data.Node, error) {
-	var nodes []data.Node
-	res, err := gen.store.Query(`select * from nodes where ? in groups`,
-		groupID)
-
-	if err != nil {
-		return nodes, err
-	}
-
-	defer res.Close()
-
-	err = res.Iterate(func(d document.Document) error {
-		var node data.Node
-		err = document.StructScan(d, &node)
-		if err != nil {
-			return err
-		}
-
-		nodes = append(nodes, node)
-
-		return nil
-	})
-
-	return nodes, err
-}
-
-// UserInsert inserts a new user
-func (gen *Db) UserInsert(user data.User) (string, error) {
-	if user.ID == "" {
-		user.ID = uuid.New().String()
-	}
-	err := gen.store.Exec(`insert into users values ?`, user)
-	return user.ID, err
-}
-
-// UserUpdate updates a new user
-func (gen *Db) UserUpdate(user data.User) error {
-	return gen.store.Update(func(tx *genji.Tx) error {
-		err := gen.store.Exec(`delete from users where id = ?`,
-			user.ID)
-
-		if err != nil {
-			if err != database.ErrDocumentNotFound {
-				return err
-			}
-		}
-
-		return gen.store.Exec(`insert into user values ?`, user)
-	})
-}
-
-// UserDelete deletes a user from the database
-func (gen *Db) UserDelete(id string) error {
-	return gen.store.Exec(`delete from users where id = ?`, id)
-}
-
-func (gen *Db) txGroups(tx *genji.Tx) ([]data.Group, error) {
-	var ret []data.Group
-
-	res, err := tx.Query(`select * from groups`)
-	if err != nil {
-		return ret, err
-	}
-
-	defer res.Close()
-
-	err = res.Iterate(func(d document.Document) error {
-		var group data.Group
-		err := document.StructScan(d, &group)
-		if err != nil {
-			return err
-		}
-		ret = append(ret, group)
-		return nil
-	})
-
-	return ret, err
-
-}
-
-// Groups returns all groups.
-func (gen *Db) Groups() ([]data.Group, error) {
-	var groups []data.Group
-
-	err := gen.store.View(func(tx *genji.Tx) error {
-		var err error
-		groups, err = gen.txGroups(tx)
-		return err
-	})
-
-	return groups, err
-}
-
-// Group returns the Group with the given ID.
-func (gen *Db) Group(id string) (data.Group, error) {
-	var ret data.Group
-	doc, err := gen.store.QueryDocument(`select * from groups where id = ?`,
-		id)
-	if err != nil {
-		return ret, err
-	}
-
-	err = document.StructScan(doc, &ret)
-	return ret, err
-}
-
-// GroupInsert inserts a new group
-func (gen *Db) GroupInsert(group data.Group) (string, error) {
-	if group.ID == "" {
-		group.ID = uuid.New().String()
-	}
-	if group.Parent == "" && group.ID != zero {
-		group.Parent = zero
-	}
-	err := gen.store.Exec(`insert into groups values ?`, group)
-	return group.ID, err
-}
-
-// GroupUpdate updates a group
-func (gen *Db) GroupUpdate(gUpdate data.Group) error {
-	return gen.store.Update(func(tx *genji.Tx) error {
-		err := tx.Exec(`delete from groups where id = ?`, gUpdate.ID)
-		if err != nil {
-			if err != database.ErrDocumentNotFound {
-				return err
-			}
-		}
-
-		return tx.Exec(`insert into groups values ?`, gUpdate)
-	})
-}
-
-// GroupDelete deletes a node from the database
-func (gen *Db) GroupDelete(id string) error {
-	return gen.store.Exec(`delete from groups where id = ?`, id)
-}
-
 type genImport struct {
-	Devices []Device     `json:"devices"`
-	Nodes   []data.Node  `json:"nodes"`
-	Edges   []data.Edge  `json:"edges"`
-	Users   []data.User  `json:"users"`
-	Groups  []data.Group `json:"groups"`
+	Nodes []data.Node `json:"nodes"`
+	Edges []data.Edge `json:"edges"`
 }
 
 // ImportDb imports contents of file into database
@@ -986,33 +871,16 @@ func ImportDb(gen *Db, in io.Reader) error {
 	}
 
 	for _, n := range dump.Nodes {
-		_, err := gen.NodeInsert(n)
+		_, err := gen.nodeInsert(n)
 		if err != nil {
 			return fmt.Errorf("Error inserting node (%+v): %w", n, err)
 		}
 	}
 
 	for _, e := range dump.Edges {
-		_, err := gen.EdgeInsert(e)
+		_, err := gen.edgeInsert(e)
 		if err != nil {
 			return fmt.Errorf("Error inserting edge (%+v): %w", e, err)
-		}
-	}
-
-	for _, d := range dump.Devices {
-		n := d.ToNode()
-		_, err := gen.NodeInsert(n)
-		if err != nil {
-			return fmt.Errorf("Error inserting node (%+v): %w", n, err)
-		}
-	}
-
-	for _, u := range dump.Users {
-		n := u.ToNode()
-		ne := n.ToNodeEdge(gen.meta.RootID)
-		_, err := gen.NodeInsertEdge(ne)
-		if err != nil {
-			return fmt.Errorf("Error inserting user (%+v): %w", u, err)
 		}
 	}
 
@@ -1033,12 +901,12 @@ func DumpDb(gen *Db, out io.Writer) error {
 
 	dump.Nodes, err = gen.Nodes()
 	if err != nil {
-		return err
+		return fmt.Errorf("Error getting nodes: %v", err)
 	}
 
-	dump.Edges, err = gen.Edges()
+	dump.Edges, err = gen.edges()
 	if err != nil {
-		return err
+		return fmt.Errorf("Error getting edges: %v", err)
 	}
 
 	dump.Meta = gen.meta
@@ -1046,5 +914,11 @@ func DumpDb(gen *Db, out io.Writer) error {
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "   ")
 
-	return encoder.Encode(dump)
+	err = encoder.Encode(dump)
+
+	if err != nil {
+		return fmt.Errorf("Error encoding: %v", err)
+	}
+
+	return nil
 }

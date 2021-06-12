@@ -7,8 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/simpleiot/simpleiot/data"
-	"github.com/simpleiot/simpleiot/db/genji"
+	"github.com/simpleiot/simpleiot/db"
 	"github.com/simpleiot/simpleiot/nats"
+
+	natsgo "github.com/nats-io/nats.go"
 )
 
 // NodeMove is a data structure used in the /node/:id/parents api call
@@ -31,16 +33,16 @@ type NodeDelete struct {
 
 // Nodes handles node requests
 type Nodes struct {
-	db        *genji.Db
+	db        *db.Db
 	check     RequestValidator
-	nh        *NatsHandler
+	nc        *natsgo.Conn
 	authToken string
 }
 
 // NewNodesHandler returns a new node handler
-func NewNodesHandler(db *genji.Db, v RequestValidator, authToken string,
-	nh *NatsHandler) http.Handler {
-	return &Nodes{db, v, nh, authToken}
+func NewNodesHandler(db *db.Db, v RequestValidator, authToken string,
+	nc *natsgo.Conn) http.Handler {
+	return &Nodes{db, v, nc, authToken}
 }
 
 // Top level handler for http requests in the coap-server process
@@ -115,7 +117,11 @@ func (h *Nodes) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				return
 			}
 
-			err := h.db.NodeDelete(id, nodeDelete.Parent)
+			err := nats.SendPoint(h.nc, id, data.Point{
+				Type: data.PointTypeRemoveParent,
+				Text: nodeDelete.Parent,
+			}, false)
+
 			if err != nil {
 				http.Error(res, err.Error(), http.StatusNotFound)
 			} else {
@@ -144,8 +150,17 @@ func (h *Nodes) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				http.Error(res, err.Error(), http.StatusBadRequest)
 				return
 			}
-			err := h.db.EdgeMove(nodeMove.ID, nodeMove.OldParent,
-				nodeMove.NewParent)
+			err := nats.SendPoints(h.nc, nodeMove.ID, data.Points{
+				{
+					Type: data.PointTypeRemoveParent,
+					Text: nodeMove.OldParent,
+				},
+				{
+					Type: data.PointTypeAddParent,
+					Text: nodeMove.NewParent,
+				},
+			}, false)
+
 			if err != nil {
 				http.Error(res, err.Error(), http.StatusNotFound)
 			} else {
@@ -160,8 +175,11 @@ func (h *Nodes) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				http.Error(res, err.Error(), http.StatusBadRequest)
 				return
 			}
-			err := h.db.EdgeCopy(nodeCopy.ID,
-				nodeCopy.NewParent)
+			err := nats.SendPoint(h.nc, nodeCopy.ID, data.Point{
+				Type: data.PointTypeAddParent,
+				Text: nodeCopy.NewParent,
+			}, false)
+
 			if err != nil {
 				http.Error(res, err.Error(), http.StatusNotFound)
 			} else {
@@ -192,7 +210,7 @@ func (h *Nodes) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				return
 			}
 
-			err = h.nh.Nc.Publish("node."+id+".not", d)
+			err = h.nc.Publish("node."+id+".not", d)
 
 			if err != nil {
 				http.Error(res, err.Error(), http.StatusBadRequest)
@@ -220,13 +238,28 @@ func (h *Nodes) insertNode(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	id, err := h.db.NodeInsertEdge(node)
+	node.Points = append(node.Points, data.Point{
+		Type: data.PointTypeNodeType,
+		Text: node.Type,
+	})
+
+	node.Points = append(node.Points, data.Point{
+		Type: data.PointTypeAddParent,
+		Text: node.Parent,
+	})
+
+	if node.ID == "" {
+		node.ID = uuid.New().String()
+	}
+
+	err := nats.SendPoints(h.nc, node.ID, node.Points, false)
+
 	if err != nil {
 		http.Error(res, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	encode(res, data.StandardResponse{Success: true, ID: id})
+	encode(res, data.StandardResponse{Success: true, ID: node.ID})
 }
 
 func (h *Nodes) processPoints(res http.ResponseWriter, req *http.Request, id string) {
@@ -238,9 +271,7 @@ func (h *Nodes) processPoints(res http.ResponseWriter, req *http.Request, id str
 		return
 	}
 
-	fmt.Printf("CLIFF: points: %+v\n", points)
-
-	err = nats.SendPoints(h.nh.Nc, id, points, true)
+	err = nats.SendPoints(h.nc, id, points, true)
 
 	if err != nil {
 		http.Error(res, err.Error(), http.StatusBadRequest)

@@ -4,12 +4,15 @@ package data
 // the system.
 const (
 	// general point types
-	PointTypeDescription string = "description"
-	PointTypeScale              = "scale"
-	PointTypeOffset             = "offset"
-	PointTypeUnits              = "units"
-	PointTypeValue              = "value"
-	PointTypeValueSet           = "valueSet"
+	PointTypeDescription  string = "description"
+	PointTypeNodeType            = "nodeType"
+	PointTypeAddParent           = "addParent"
+	PointTypeRemoveParent        = "removeParent"
+	PointTypeScale               = "scale"
+	PointTypeOffset              = "offset"
+	PointTypeUnits               = "units"
+	PointTypeValue               = "value"
+	PointTypeValueSet            = "valueSet"
 	// PointTypeID typically refers to Node ID
 	PointTypeID                 = "id"
 	PointTypeAddress            = "address"
@@ -151,10 +154,14 @@ const (
 	NodeTypeVariable      = "variable"
 	PointTypeVariableType = "variableType"
 
+<<<<<<< HEAD
 	PointTypeDigitalInput     = "digitalInput"
 	PointTypeDigitalInputDesc = "digitalInputDesc"
 
 	PointTypeRelay     = "relay"
 	PointTypeRelaySet  = "relaySet"
 	PointTypeRelayDesc = "relayDesc"
+=======
+	NodeTypeUpstream = "upstream"
+>>>>>>> 727077e7ad7eea64d73033edf62d291a173c1eb4
 )

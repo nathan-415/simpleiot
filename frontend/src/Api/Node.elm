@@ -24,6 +24,7 @@ module Api.Node exposing
     , typeModbusMultiIO
     , typeMsgService
     , typeRule
+    , typeUpstream
     , typeUser
     , typeVariable
     )
@@ -113,11 +114,17 @@ typeVariable =
     "variable"
 
 
+typeUpstream : String
+typeUpstream =
+    "upstream"
+
+
 type alias Node =
     { id : String
     , typ : String
     , parent : String
     , points : List Point
+    , tombstone : Bool
     }
 
 
@@ -166,6 +173,7 @@ decode =
         |> required "type" Decode.string
         |> required "parent" Decode.string
         |> optional "points" (Decode.list Point.decode) []
+        |> required "tombstone" Decode.bool
 
 
 decodeCmd : Decode.Decoder NodeCmd
@@ -230,7 +238,7 @@ encodeNodeDelete nodeDelete =
 
 description : Node -> String
 description d =
-    case Point.get d.points "" Point.typeDescription 0 of
+    case Point.get d.points "" 0 Point.typeDescription of
         Just point ->
             point.text
 
