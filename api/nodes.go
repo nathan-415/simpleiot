@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -78,6 +79,7 @@ func (h *Nodes) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				http.Error(res, err.Error(), http.StatusNotFound)
 				return
 			}
+			fmt.Printf("CLIFF: nodes: %+v\n", nodes)
 			if len(nodes) > 0 {
 				en := json.NewEncoder(res)
 				en.Encode(nodes)
@@ -235,6 +237,8 @@ func (h *Nodes) processPoints(res http.ResponseWriter, req *http.Request, id str
 		http.Error(res, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	fmt.Printf("CLIFF: points: %+v\n", points)
 
 	err = nats.SendPoints(h.nh.Nc, id, points, true)
 

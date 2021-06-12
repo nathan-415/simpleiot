@@ -422,6 +422,9 @@ update msg model =
 
         Tick now ->
             let
+                _ =
+                    Debug.log "tick" now
+
                 nodeMsg =
                     Maybe.andThen
                         (\m ->
@@ -448,6 +451,9 @@ update msg model =
             case resp of
                 Data.Success nodes ->
                     let
+                        _ =
+                            Debug.log "nodes" nodes
+
                         new =
                             nodes
                                 |> nodeListToTrees

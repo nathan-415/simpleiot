@@ -6,6 +6,7 @@ import Element exposing (..)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
+import Element.Input as Input
 import Round
 import Time
 import UI.Form as Form
@@ -55,10 +56,54 @@ view o =
                 }
 
         value =
-            Point.getValue o.node.points Point.typeValue
+            Point.getValueIndexed o.node.points Point.typeDigitalInput 0
 
-        valueSet =
-            Point.getValue o.node.points Point.typeValueSet
+        value1 =
+            Point.getValueIndexed o.node.points Point.typeDigitalInput 1
+
+        --valueSet =
+        --    Point.getValue o.node.points Point.typeValueSet
+        valueText =
+            if value == 0 then
+                "off"
+
+            else
+                "on"
+
+        valueBackgroundColor =
+            if valueText == "on" then
+                Style.colors.blue
+
+            else
+                Style.colors.none
+
+        valueTextColor =
+            if valueText == "on" then
+                Style.colors.white
+
+            else
+                Style.colors.black
+
+        valueText1 =
+            if value == 0 then
+                "off"
+
+            else
+                "on"
+
+        valueBackgroundColor1 =
+            if valueText == "on" then
+                Style.colors.blue
+
+            else
+                Style.colors.none
+
+        valueTextColor1 =
+            if valueText == "on" then
+                Style.colors.white
+
+            else
+                Style.colors.black
     in
     column
         [ width fill
@@ -73,9 +118,50 @@ view o =
             ]
             :: (if o.expDetail then
                     [ textInput Point.typeDescription "Description"
-                    , numberInput Point.typeID "ID"
-                    , onOffInput Point.typeValue Point.typeValueSet "DI_01"
-                    , onOffInput Point.typeValue Point.typeValueSet "DI_02"
+                    , numberInput Point.typeID
+                        "ID"
+                    , row [ spacing 2 ]
+                        [ text <|
+                            "DI_01: "
+                        , el [ paddingXY 7 0, Background.color valueBackgroundColor, Font.color valueTextColor ] <|
+                            text <|
+                                valueText
+                        , Input.text []
+                            { onChange =
+                                \d ->
+                                    o.onEditNodePoint (Point "" Point.typeDigitalInputDesc 0 o.now 0 d 0 0)
+                            , text = Point.getTextIndexed o.node.points Point.typeDigitalInputDesc 0
+                            , placeholder = Nothing
+                            , label =
+                                Input.labelLeft [ width (px 0) ] <|
+                                    el
+                                        [ alignRight ]
+                                    <|
+                                        text <|
+                                            ""
+                            }
+                        ]
+                    , row [ spacing 4 ]
+                        [ text <|
+                            "DI_02: "
+                        , el [ paddingXY 7 0, Background.color valueBackgroundColor, Font.color valueTextColor ] <|
+                            text <|
+                                valueText
+                        , Input.text []
+                            { onChange =
+                                \d ->
+                                    o.onEditNodePoint (Point "" Point.typeDigitalInputDesc 1 o.now 0 d 0 0)
+                            , text = Point.getTextIndexed o.node.points Point.typeDigitalInputDesc 1
+                            , placeholder = Nothing
+                            , label =
+                                Input.labelLeft [ width (px 0) ] <|
+                                    el
+                                        [ alignRight ]
+                                    <|
+                                        text <|
+                                            ""
+                            }
+                        ]
                     ]
 
                 else

@@ -12,7 +12,9 @@ module Api.Point exposing
     , getBool
     , getLatest
     , getText
+    , getTextIndexed
     , getValue
+    , getValueIndexed
     , newText
     , newValue
     , renderPoint
@@ -28,6 +30,8 @@ module Api.Point exposing
     , typeDataFormat
     , typeDebug
     , typeDescription
+    , typeDigitalInput
+    , typeDigitalInputDesc
     , typeEmail
     , typeErrorCount
     , typeErrorCountCRC
@@ -570,6 +574,16 @@ typeOrg =
     "org"
 
 
+typeDigitalInput : String
+typeDigitalInput =
+    "digitalInput"
+
+
+typeDigitalInputDesc : String
+typeDigitalInputDesc =
+    "digitalInputDesc"
+
+
 
 -- Point should match data/Point.go
 
@@ -740,6 +754,22 @@ getText points typ =
             ""
 
 
+getTextIndexed : List Point -> String -> Int -> String
+getTextIndexed points typ index =
+    case
+        List.Extra.find
+            (\p ->
+                typ == p.typ && index == p.index
+            )
+            points
+    of
+        Just found ->
+            found.text
+
+        Nothing ->
+            ""
+
+
 getBestDesc : List Point -> String
 getBestDesc points =
     let
@@ -765,6 +795,22 @@ getValue points typ =
         List.Extra.find
             (\p ->
                 typ == p.typ
+            )
+            points
+    of
+        Just found ->
+            found.value
+
+        Nothing ->
+            0
+
+
+getValueIndexed : List Point -> String -> Int -> Float
+getValueIndexed points typ index =
+    case
+        List.Extra.find
+            (\p ->
+                typ == p.typ && index == p.index
             )
             points
     of
