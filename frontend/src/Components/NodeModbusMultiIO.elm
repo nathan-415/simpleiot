@@ -55,11 +55,23 @@ view o =
                 , labelWidth = labelWidth
                 }
 
+        di01ID =
+            "2021"
+
+        di02ID =
+            "2020"
+
+        di01DescID =
+            "2019"
+
+        di02DescID =
+            "2018"
+
         value =
-            Point.getValueIndexed o.node.points Point.typeDigitalInput 0
+            Point.getValue o.node.points di01ID 0 Point.typeDigitalInput
 
         value1 =
-            Point.getValueIndexed o.node.points Point.typeDigitalInput 1
+            Point.getValue o.node.points di02ID 1 Point.typeDigitalInput
 
         --valueSet =
         --    Point.getValue o.node.points Point.typeValueSet
@@ -114,44 +126,34 @@ view o =
     <|
         wrappedRow [ spacing 10 ]
             [ text <|
-                Point.getText o.node.points Point.typeDescription
+                Point.getText o.node.points "456" 0 Point.typeDescription
             ]
             :: (if o.expDetail then
-                    [ textInput Point.typeDescription "Description"
-                    , numberInput Point.typeID
+                    [ textInput "456" 0 Point.typeDescription "Description"
+                    , numberInput "789"
+                        0
+                        Point.typeID
                         "ID"
+                    , textInput di01DescID 0 Point.typeDescription ("DI_01" ++ valueText)
+                    , Input.text
+                        []
+                        { onChange =
+                            \d ->
+                                o.onEditNodePoint (Point di01DescID 0 Point.typeDescription o.now 0 d 0 0)
+                        , text = Point.getText o.node.points di01DescID 0 Point.typeDescription
+                        , placeholder = Nothing
+                        , label = Input.labelLeft [ width (px 150) ] <| el [ alignRight ] <| text <| ("DI_01: " ++ valueText ++ " - ")
+                        }
                     , row [ spacing 2 ]
                         [ text <|
-                            "DI_01: "
-                        , el [ paddingXY 7 0, Background.color valueBackgroundColor, Font.color valueTextColor ] <|
-                            text <|
-                                valueText
-                        , Input.text []
-                            { onChange =
-                                \d ->
-                                    o.onEditNodePoint (Point "" Point.typeDigitalInputDesc 0 o.now 0 d 0 0)
-                            , text = Point.getTextIndexed o.node.points Point.typeDigitalInputDesc 0
-                            , placeholder = Nothing
-                            , label =
-                                Input.labelLeft [ width (px 0) ] <|
-                                    el
-                                        [ alignRight ]
-                                    <|
-                                        text <|
-                                            ""
-                            }
-                        ]
-                    , row [ spacing 4 ]
-                        [ text <|
                             "DI_02: "
-                        , el [ paddingXY 7 0, Background.color valueBackgroundColor, Font.color valueTextColor ] <|
-                            text <|
-                                valueText
+                        , el [ paddingXY 7 0, Background.color valueBackgroundColor1, Font.color valueTextColor1 ] <|
+                            text valueText1
                         , Input.text []
                             { onChange =
                                 \d ->
-                                    o.onEditNodePoint (Point "" Point.typeDigitalInputDesc 1 o.now 0 d 0 0)
-                            , text = Point.getTextIndexed o.node.points Point.typeDigitalInputDesc 1
+                                    o.onEditNodePoint (Point di02DescID 0 Point.typeDigitalInputDesc o.now 0 d 0 0)
+                            , text = Point.getText o.node.points di02DescID 0 Point.typeDigitalInputDesc
                             , placeholder = Nothing
                             , label =
                                 Input.labelLeft [ width (px 0) ] <|

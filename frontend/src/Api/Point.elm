@@ -748,22 +748,6 @@ getText points id index typ =
             ""
 
 
-getTextIndexed : List Point -> String -> Int -> String
-getTextIndexed points typ index =
-    case
-        List.Extra.find
-            (\p ->
-                typ == p.typ && index == p.index
-            )
-            points
-    of
-        Just found ->
-            found.text
-
-        Nothing ->
-            ""
-
-
 getBestDesc : List Point -> String
 getBestDesc points =
     let
