@@ -81,7 +81,6 @@ func (h *Nodes) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				http.Error(res, err.Error(), http.StatusNotFound)
 				return
 			}
-			fmt.Printf("CLIFF: nodes: %+v\n", nodes)
 			if len(nodes) > 0 {
 				en := json.NewEncoder(res)
 				en.Encode(nodes)

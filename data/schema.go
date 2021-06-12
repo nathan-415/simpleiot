@@ -154,14 +154,12 @@ const (
 	NodeTypeVariable      = "variable"
 	PointTypeVariableType = "variableType"
 
-<<<<<<< HEAD
 	PointTypeDigitalInput     = "digitalInput"
 	PointTypeDigitalInputDesc = "digitalInputDesc"
 
 	PointTypeRelay     = "relay"
 	PointTypeRelaySet  = "relaySet"
 	PointTypeRelayDesc = "relayDesc"
-=======
+
 	NodeTypeUpstream = "upstream"
->>>>>>> 727077e7ad7eea64d73033edf62d291a173c1eb4
 )

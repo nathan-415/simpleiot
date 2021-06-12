@@ -12,9 +12,7 @@ module Api.Point exposing
     , getBool
     , getLatest
     , getText
-    , getTextIndexed
     , getValue
-    , getValueIndexed
     , newText
     , newValue
     , renderPoint
@@ -797,31 +795,9 @@ getValue points id index typ =
             0
 
 
-<<<<<<< HEAD
-getValueIndexed : List Point -> String -> Int -> Float
-getValueIndexed points typ index =
-    case
-        List.Extra.find
-            (\p ->
-                typ == p.typ && index == p.index
-            )
-            points
-    of
-        Just found ->
-            found.value
-
-        Nothing ->
-            0
-
-
-getBool : List Point -> String -> Bool
-getBool points typ =
-    getValue points typ == 1
-=======
 getBool : List Point -> String -> Int -> String -> Bool
 getBool points id index typ =
     getValue points id index typ == 1
->>>>>>> 727077e7ad7eea64d73033edf62d291a173c1eb4
 
 
 getLatest : List Point -> Maybe Point
