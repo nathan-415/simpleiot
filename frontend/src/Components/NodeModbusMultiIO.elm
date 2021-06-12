@@ -116,6 +116,17 @@ view o =
 
             else
                 Style.colors.black
+
+        io =
+            Input.text
+                []
+                { onChange =
+                    \d ->
+                        o.onEditNodePoint (Point di01DescID 0 Point.typeDescription o.now 0 d 0 0)
+                , text = Point.getText o.node.points di01DescID 0 Point.typeDescription
+                , placeholder = Nothing
+                , label = Input.labelLeft [ width (px 150) ] <| el [ alignRight ] <| text <| ("DI_01: " ++ valueText ++ " - ")
+                }
     in
     column
         [ width fill
@@ -134,36 +145,7 @@ view o =
                         0
                         Point.typeID
                         "ID"
-                    , textInput di01DescID 0 Point.typeDescription ("DI_01" ++ valueText)
-                    , Input.text
-                        []
-                        { onChange =
-                            \d ->
-                                o.onEditNodePoint (Point di01DescID 0 Point.typeDescription o.now 0 d 0 0)
-                        , text = Point.getText o.node.points di01DescID 0 Point.typeDescription
-                        , placeholder = Nothing
-                        , label = Input.labelLeft [ width (px 150) ] <| el [ alignRight ] <| text <| ("DI_01: " ++ valueText ++ " - ")
-                        }
-                    , row [ spacing 2 ]
-                        [ text <|
-                            "DI_02: "
-                        , el [ paddingXY 7 0, Background.color valueBackgroundColor1, Font.color valueTextColor1 ] <|
-                            text valueText1
-                        , Input.text []
-                            { onChange =
-                                \d ->
-                                    o.onEditNodePoint (Point di02DescID 0 Point.typeDigitalInputDesc o.now 0 d 0 0)
-                            , text = Point.getText o.node.points di02DescID 0 Point.typeDigitalInputDesc
-                            , placeholder = Nothing
-                            , label =
-                                Input.labelLeft [ width (px 0) ] <|
-                                    el
-                                        [ alignRight ]
-                                    <|
-                                        text <|
-                                            ""
-                            }
-                        ]
+                    , io
                     ]
 
                 else
