@@ -8,7 +8,7 @@ import (
 	"github.com/simpleiot/simpleiot/data"
 )
 
-// GetNode over NATS
+// GetNode over NATS. If id is "root", the root node is fetched.
 func GetNode(nc *natsgo.Conn, id, parent string) (data.NodeEdge, error) {
 	nodeMsg, err := nc.Request("node."+id, []byte(parent), time.Second*20)
 	if err != nil {
@@ -55,7 +55,8 @@ func SendNode(src, dest *natsgo.Conn, id, parent string) error {
 	})
 
 	if parent != "" {
-		if node.Tombstone {
+		tombstone, _ := node.IsTombstone()
+		if tombstone {
 			points = append(points, data.Point{
 				Type: data.PointTypeRemoveParent,
 				Text: parent,
@@ -68,7 +69,7 @@ func SendNode(src, dest *natsgo.Conn, id, parent string) error {
 		}
 	}
 
-	err = SendPoints(dest, id, points, true)
+	err = SendNodePoints(dest, id, points, true)
 
 	if err != nil {
 		return fmt.Errorf("Error sending node upstream: %v", err)

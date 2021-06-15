@@ -343,6 +343,7 @@ update msg model =
                                 , onResponse = ApiRespPostAddNode parent
                                 , node =
                                     { id = ""
+                                    , edgeId = ""
                                     , typ = typ
                                     , parent = addNode.parent
                                     , points =
@@ -351,7 +352,7 @@ update msg model =
                                             Point.typeDescription
                                             "New, please edit"
                                         ]
-                                    , tombstone = False
+                                    , edgePoints = []
                                     }
                                 }
                             )
@@ -799,7 +800,11 @@ populateHasChildren parentID tree =
         hasChildren =
             List.foldr
                 (\child count ->
-                    if (Tree.label child).node.tombstone then
+                    let
+                        tombstone =
+                            isTombstone (Tree.label child).node
+                    in
+                    if tombstone then
                         count
 
                     else
@@ -984,8 +989,14 @@ viewNodesHelp depth model tree =
             let
                 childNode =
                     Tree.label child
+
+                tombstone =
+                    isTombstone childNode.node
+
+                display =
+                    shouldDisplay childNode.node.typ
             in
-            if shouldDisplay childNode.node.typ && not childNode.node.tombstone then
+            if display && not tombstone then
                 ret
                     ++ viewNode model (Just node) childNode depth
                     :: viewNodesHelp (depth + 1) model child
@@ -995,6 +1006,11 @@ viewNodesHelp depth model tree =
         )
         []
         children
+
+
+isTombstone : Node -> Bool
+isTombstone node =
+    Point.getBool node.edgePoints "" 0 Point.typeTombstone
 
 
 shouldDisplay : String -> Bool
