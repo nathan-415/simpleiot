@@ -20,8 +20,8 @@ module Api.Node exposing
     , typeDevice
     , typeGroup
     , typeModbus
+    , typeModbusAdam4051
     , typeModbusIO
-    , typeModbusMultiIO
     , typeMsgService
     , typeRule
     , typeUpstream
@@ -104,9 +104,9 @@ typeModbusIO =
     "modbusIo"
 
 
-typeModbusMultiIO : String
-typeModbusMultiIO =
-    "modbusMultiIo"
+typeModbusAdam4051 : String
+typeModbusAdam4051 =
+    "modbusAdam4051"
 
 
 typeVariable : String

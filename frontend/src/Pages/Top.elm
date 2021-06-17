@@ -14,8 +14,8 @@ import Components.NodeDevice as NodeDevice
 import Components.NodeGroup as NodeGroup
 import Components.NodeMessageService as NodeMessageService
 import Components.NodeModbus as NodeModbus
+import Components.NodeModbusAdam4051 as NodeModbusAdam4051
 import Components.NodeModbusIO as NodeModbusIO
-import Components.NodeModbusMultiIO as NodeModbusMultiIO
 import Components.NodeRule as NodeRule
 import Components.NodeUpstream as NodeUpstream
 import Components.NodeUser as NodeUser
@@ -1028,7 +1028,7 @@ shouldDisplay typ =
         "modbusIo" ->
             True
 
-        "modbusMultiIo" ->
+        "modbusAdam4051" ->
             True
 
         "rule" ->
@@ -1076,8 +1076,8 @@ viewNode model parent node depth =
                 "modbusIo" ->
                     NodeModbusIO.view
 
-                "modbusMultiIo" ->
-                    NodeModbusMultiIO.view
+                "modbusAdam4051" ->
+                    NodeModbusAdam4051.view
 
                 "rule" ->
                     NodeRule.view
@@ -1290,9 +1290,9 @@ nodeDescModbusIO =
     row [] [ Icon.io, text "Modbus IO" ]
 
 
-nodeDescModbusMultiIO : Element Msg
-nodeDescModbusMultiIO =
-    row [] [ Icon.io, text "Modbus Multiple IO" ]
+nodeDescModbusAdam4051 : Element Msg
+nodeDescModbusAdam4051 =
+    row [] [ Icon.io, text "Modbus Adam-4051" ]
 
 
 nodeDescRule : Element Msg
@@ -1368,7 +1368,7 @@ viewAddNode parent add =
                        )
                     ++ (if parent.node.typ == Node.typeModbus then
                             [ Input.option Node.typeModbusIO nodeDescModbusIO
-                            , Input.option Node.typeModbusMultiIO nodeDescModbusMultiIO
+                            , Input.option Node.typeModbusAdam4051 nodeDescModbusAdam4051
                             ]
 
                         else

@@ -138,10 +138,10 @@ func (b *Modbus) CheckIOs() error {
 				}
 				b.ios[node.ID] = io
 				b.InitRegs(io.ioNode)
-			case data.NodeTypeModbusMultiIO:
+			case data.NodeTypeModbusAdam4051:
 				// add ios
 				var err error
-				ioNode, err := NewModbusMultiIONode(b.busNode.busType, &node)
+				ioNode, err := NewModbusAdam4051Node(b.busNode.busType, &node)
 				_ = ioNode
 				fmt.Println("COLLIN, added multi here")
 				if err != nil {
@@ -149,7 +149,7 @@ func (b *Modbus) CheckIOs() error {
 					continue
 				}
 				/*
-						io, err = NewModbusMultiIO(b.nc, ioNode, b.chPoint)
+						io, err = NewModbusAdam4051(b.nc, ioNode, b.chPoint)
 						if err != nil {
 							log.Println("Error creating new modbus IO: ", err)
 							continue
@@ -326,6 +326,8 @@ func (b *Modbus) ReadBusReg(io *ModbusIO) error {
 	return nil
 }
 
+// Create read bus bitS for multi io's
+
 // ReadBusBit is used to read coil of discrete input values from bus
 // this function modifies io.value. This should only be called from client.
 func (b *Modbus) ReadBusBit(io *ModbusIO) error {
@@ -425,6 +427,8 @@ func (b *Modbus) ClientIO(io *ModbusIO) error {
 		if err != nil {
 			return err
 		}
+
+	// case data.WP...
 
 	default:
 		return fmt.Errorf("unhandled modbus io type, io: %+v", io)

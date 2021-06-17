@@ -6,16 +6,16 @@ import (
 	"github.com/simpleiot/simpleiot/data"
 )
 
-// ModbusMultiIONode describes a modbus IO db node
-type ModbusMultiIONode struct {
+// ModbusAdam4051Node describes a modbus IO db node
+type ModbusAdam4051Node struct {
 	nodeID      string
 	description string
 	id          int
 }
 
-// NewModbusMultiIONode Convert node to modbus IO node
-func NewModbusMultiIONode(busType string, node *data.NodeEdge) (*ModbusMultiIONode, error) {
-	ret := ModbusMultiIONode{
+// NewModbusAdam4051 Convert node to modbus IO node
+func NewModbusAdam4051Node(busType string, node *data.NodeEdge) (*ModbusAdam4051Node, error) {
+	ret := ModbusAdam4051Node{
 		nodeID: node.ID,
 	}
 
@@ -35,7 +35,7 @@ func NewModbusMultiIONode(busType string, node *data.NodeEdge) (*ModbusMultiIONo
 
 // Changed returns true if the config of the IO has changed
 // FIXME, we should not need this once we get NATS wired
-func (io *ModbusMultiIONode) Changed(newIO *ModbusMultiIONode) bool {
+func (io *ModbusAdam4051Node) Changed(newIO *ModbusAdam4051Node) bool {
 	if io.id != newIO.id {
 		return true
 	}

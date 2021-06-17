@@ -77,8 +77,8 @@ const (
 	PointValueRTU     = "RTU"
 	PointValueTCP     = "TCP"
 
-	NodeTypeModbusIO      = "modbusIo"
-	NodeTypeModbusMultiIO = "modbusMultiIo"
+	NodeTypeModbusIO       = "modbusIo"
+	NodeTypeModbusAdam4051 = "modbusAdam4051"
 
 	PointTypeModbusIOType           = "modbusIoType"
 	PointValueModbusDiscreteInput   = "modbusDiscreteInput"
@@ -155,12 +155,12 @@ const (
 	NodeTypeVariable      = "variable"
 	PointTypeVariableType = "variableType"
 
-	PointTypeDigitalInput     = "digitalInput"
-	PointTypeDigitalInputDesc = "digitalInputDesc"
+	PointTypeModbusDigitalInput     = "modbusDigitalInput"
+	PointTypeModbusDigitalInputDesc = "modbusDigitalInputDesc"
 
-	PointTypeRelay     = "relay"
-	PointTypeRelaySet  = "relaySet"
-	PointTypeRelayDesc = "relayDesc"
+	PointTypeModbusRelay     = "modbusRelay"
+	PointTypeModbusRelaySet  = "modbusRelaySet"
+	PointTypeModbusRelayDesc = "modbusRelayDesc"
 
 	NodeTypeUpstream = "upstream"
 )

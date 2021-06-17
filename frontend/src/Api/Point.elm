@@ -28,8 +28,6 @@ module Api.Point exposing
     , typeDataFormat
     , typeDebug
     , typeDescription
-    , typeDigitalInput
-    , typeDigitalInputDesc
     , typeEmail
     , typeErrorCount
     , typeErrorCountCRC
@@ -43,6 +41,8 @@ module Api.Point exposing
     , typeID
     , typeLastName
     , typeMinActive
+    , typeModbusDigitalInput
+    , typeModbusDigitalInputDesc
     , typeModbusIOType
     , typeNodeType
     , typeOSVersion
@@ -584,14 +584,14 @@ typeOrg =
     "org"
 
 
-typeDigitalInput : String
-typeDigitalInput =
-    "digitalInput"
+typeModbusDigitalInput : String
+typeModbusDigitalInput =
+    "modbusDigitalInput"
 
 
-typeDigitalInputDesc : String
-typeDigitalInputDesc =
-    "digitalInputDesc"
+typeModbusDigitalInputDesc : String
+typeModbusDigitalInputDesc =
+    "modbusDigitalInputDesc"
 
 
 
